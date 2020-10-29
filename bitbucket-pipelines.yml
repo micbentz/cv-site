@@ -1,0 +1,39 @@
+pipelines:
+  pull-requests:
+    '**': #this runs as default for any branch not elsewhere defined
+      - step:
+          name: Run tests on merge
+          image: golang:1.14.1
+          script:
+            - export CGO_ENABLED=0
+            - go test -v
+    #feature/*: #any branch with a feature prefix
+      #- step:
+       #   script:
+        #    - ...
+  tags:
+      '*.*.*':
+        - step:
+            name: Test and build application
+            image: golang:1.14.1
+            script:
+              - export CGO_ENABLED=0
+              - go test -v
+              - go build -o main .
+            artifacts:
+              - main
+              - static/**
+        - step:
+            name: Build Docker Image and Deploy
+            image: chinolavine/doctl-pipeline:20.1.0
+            script:
+            - export IMAGE_TAG=$(echo $BITBUCKET_TAG | sed "s/[+].*$//")
+            - export DIGITALOCEAN_ACCESS_TOKEN=$DO_ACCESS_TOKEN
+            - export IMAGE_NAME=$REGISTRY/site:$IMAGE_TAG
+            - doctl registry login
+            - docker build -t $IMAGE_NAME .
+            - docker push $IMAGE_NAME
+            - doctl kubernetes cluster kubeconfig save $CLUSTER_ID
+            - kubectl --namespace=prod set image deployment/site $IMAGE_NAME
+            services:
+                - docker
